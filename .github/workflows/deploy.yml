@@ -1,0 +1,58 @@
+name: Build Docker Container
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      actions: write
+      checks: write
+      deployments: write
+      issues: write
+      packages: write
+      pull-requests: write
+      repository-projects: write
+      security-events: write
+      statuses: write
+    env:
+      REPO: joeyeamigh/apcupsd-mqtt-exporter
+      VERSION: v0.0.0
+      ANYTHING_TO_DO: true
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if tag exists already
+        run: |
+          VERSION=$(grep -m1 version $GITHUB_WORKSPACE/Cargo.toml | cut -d '"' -f2)
+          echo "VERSION=v$VERSION" >> $GITHUB_ENV
+
+          if docker manifest inspect "ghcr.io/$REPO/apcupsd-mqtt-exporter":v"$current_version" > /dev/null; then
+            echo "No need to rebuild apcupsd-mqtt-exporter"
+            echo "ANYTHING_TO_DO=false" >> $GITHUB_ENV
+          else
+            echo "Rebuilding apcupsd-mqtt-exporter"
+            echo "ANYTHING_TO_DO=true" >> $GITHUB_ENV
+          fi
+
+      - name: Build Container
+        run: |
+          if [[ "$ANYTHING_TO_DO" = "false" ]]; then exit 0; fi
+          cd $GITHUB_WORKSPACE
+
+          ./scripts/docker.sh $VERSION
