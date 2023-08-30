@@ -12,7 +12,7 @@ async fn main() {
 
   let config = config::Config::new();
 
-  let (mut mqtt_sender, tx) = mqtt::MQTTSender::new(&config);
+  let (mut mqtt_sender, rx, tx) = mqtt::MQTTSender::new(&config);
 
   info!("Starting apcupsd_mqtt_exporter");
 
@@ -20,7 +20,7 @@ async fn main() {
     apcupsd::APCUPSdPolling::new(&config, tx).poll().await;
   });
 
-  mqtt_sender.listen().await;
+  mqtt_sender.listen(rx).await;
 }
 
 fn init_logger() {

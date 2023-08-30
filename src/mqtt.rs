@@ -1,18 +1,25 @@
 use super::config::Config;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{debug, trace, warn};
+use tracing::{debug, warn};
 
 pub struct MQTTSender {
   client: rumqttc::AsyncClient,
   eventloop: rumqttc::EventLoop,
   topic: String,
-
-  rx: mpsc::Receiver<HashMap<String, String>>,
+  suffix: String,
+  home_assistant_mode: bool,
+  home_assistant_uuid_prefix: String,
 }
 
+type MQTTNewSenderReturn = (
+  MQTTSender,
+  mpsc::Receiver<HashMap<String, String>>,
+  mpsc::Sender<HashMap<String, String>>,
+);
+
 impl MQTTSender {
-  pub fn new(config: &Config) -> (Self, mpsc::Sender<HashMap<String, String>>) {
+  pub fn new(config: &Config) -> MQTTNewSenderReturn {
     let mut options = rumqttc::MqttOptions::new(
       config.mqtt_client_id.clone(),
       config.mqtt_host.clone(),
@@ -23,70 +30,116 @@ impl MQTTSender {
       options.set_credentials(config.mqtt_username.clone(), config.mqtt_password.clone());
     }
 
-    let (client, eventloop) = rumqttc::AsyncClient::new(options, 100);
+    let (client, eventloop) = rumqttc::AsyncClient::new(options, 1);
 
-    let (tx, rx) = mpsc::channel(10);
+    let (tx, rx) = mpsc::channel(1);
 
     (
       Self {
         client,
         eventloop,
         topic: config.mqtt_topic.clone(),
-        rx,
+        suffix: config.mqtt_suffix.clone(),
+        home_assistant_mode: config.home_assistant_mode,
+        home_assistant_uuid_prefix: config.home_assistant_uuid_prefix.clone(),
       },
+      rx,
       tx,
     )
   }
 
-  pub async fn listen(&mut self) {
+  pub async fn listen(&mut self, mut rx: mpsc::Receiver<HashMap<String, String>>) {
     let qos = rumqttc::QoS::AtLeastOnce;
     let retain = false;
+    let topic = self.topic.clone();
+    let suffix = self.suffix.clone();
+    let client = self.client.clone();
+    let home_assistant_mode = self.home_assistant_mode;
+    let home_assistant_uuid_prefix = self.home_assistant_uuid_prefix.clone();
 
-    loop {
-      tokio::select! {
-        mqtt_msg = self.eventloop.poll() => {
-          trace!("Received MQTT message: {:?}", mqtt_msg);
-        }
-        data = self.rx.recv() => {
-          debug!("Received data from apcaccess: {:?}", data);
+    tokio::spawn(async move {
+      let mut seen_before: HashMap<String, bool> = HashMap::new();
 
-          let data = if let Some(data) = data {
-            data
-          } else {
-            continue;
-          };
+      loop {
+        let data = rx.recv().await;
+        let data = if let Some(data) = data {
+          data
+        } else {
+          continue;
+        };
 
-          let status = data.get("STATUS");
-          let has_ac_power = match status {
-            Some(status) => {
-              if status == "ONLINE" {
-                "true"
-              } else {
-                "false"
+        debug!("Received data from apcaccess: {:?}", data);
+
+        if home_assistant_mode {
+          for (param, value) in data.clone() {
+            let uuid = format!("{}{}", home_assistant_uuid_prefix, param);
+
+            let config_topic = format!("{}/{}/config", topic, uuid);
+            let state_topic = format!("{}/{}/{}", topic, uuid, suffix);
+
+            if !seen_before.contains_key(&param) {
+              let payload = serde_json::json!({
+                "name": format!("{}", param),
+                "unique_id": uuid,
+                "device": {
+                  "identifiers": format!("{}", topic),
+                  "name": "APC UPS",
+                },
+                "state_topic": state_topic,
+                "value_template": "{{ value_json.state }}",
+                "expire_after": 60,
+              })
+              .to_string();
+
+              debug!(
+                "Publishing Initial Home Assistant Config MQTT message: {} -> {:?}",
+                config_topic, payload
+              );
+
+              if let Err(err) = client.publish(config_topic, qos, retain, payload).await {
+                warn!(
+                  "Failed to publish Initial Home Assistant Config MQTT message: {:?}",
+                  err
+                );
               }
+
+              seen_before.insert(param.clone(), true);
             }
-            None => "false",
-          };
 
-          for (param, value) in data {
-            let topic = format!("{}/{}", self.topic, param.to_lowercase().replace(' ', "-"));
+            let payload = serde_json::json!({ "state": value }).to_string();
 
-            debug!("Publishing MQTT message: {} -> {:?}", topic, value.clone());
+            debug!(
+              "Publishing Home Assistant State MQTT message: {} -> {:?}",
+              state_topic, payload
+            );
 
-            if let Err(err) = self.client.publish(topic, qos, retain, value).await {
-              warn!("Failed to publish MQTT message: {:?}", err);
+            if let Err(err) = client.publish(state_topic, qos, retain, payload).await {
+              warn!("Failed to publish Home Assistant State MQTT message: {:?}", err);
             }
           }
 
-          let topic = format!("{}/{}", self.topic, "acpower");
+          continue;
+        }
 
-          debug!("Publishing MQTT message: {} -> {:?}", topic, has_ac_power);
+        for (param, value) in data {
+          let mut topic = format!("{}/{}", topic, param.to_lowercase().replace(' ', "-"));
+          if !suffix.is_empty() {
+            topic = format!("{}/{}", topic, suffix);
+          }
 
-          if let Err(err) = self.client.publish(topic, qos, retain, has_ac_power).await {
+          debug!("Publishing MQTT message: {} -> {:?}", topic, value.clone());
+
+          if let Err(err) = client.publish(topic, qos, retain, value).await {
             warn!("Failed to publish MQTT message: {:?}", err);
           }
         }
       }
+    });
+
+    loop {
+      let _ = self.eventloop.poll().await;
+      // let mqtt_msg = self.eventloop.poll().await;
+      // trace!("Received MQTT message: {:?}", mqtt_msg);
     }
   }
 }

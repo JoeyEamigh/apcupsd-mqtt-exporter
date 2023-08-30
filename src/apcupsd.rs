@@ -8,6 +8,7 @@ use tracing::{error, trace};
 pub struct APCUPSdPolling {
   apc: APCAccess,
   poll_interval: u64,
+  timeout: u64,
 
   tx: mpsc::Sender<HashMap<String, String>>,
 }
@@ -18,11 +19,13 @@ impl APCUPSdPolling {
       host: app_config.apcupsd_host.clone(),
       port: app_config.apcupsd_port,
       strip_units: app_config.apcupsd_strip_units,
+      timeout: app_config.apcupsd_poll_timeout,
     };
 
     Self {
       apc: APCAccess::new(Some(config)),
       poll_interval: app_config.apcupsd_poll_interval,
+      timeout: app_config.apcupsd_poll_timeout,
 
       tx,
     }
@@ -30,10 +33,30 @@ impl APCUPSdPolling {
 
   pub async fn poll(&self) {
     loop {
-      let data = match self.apc.fetch() {
-        Ok(data) => data,
+      trace!("polling apcupsd");
+      let apc = self.apc.clone();
+
+      let data = match tokio::time::timeout(
+        std::time::Duration::from_secs(self.timeout),
+        tokio::spawn(async move { apc.fetch() }),
+      )
+      .await
+      {
+        Ok(data) => match data {
+          Ok(data) => match data {
+            Ok(data) => data,
+            Err(err) => {
+              error!("failed to fetch data from apcupsd: {:?}", err);
+              continue;
+            }
+          },
+          Err(err) => {
+            error!("failed to fetch data from apcupsd: {:?}", err);
+            continue;
+          }
+        },
         Err(err) => {
-          error!("Failed to fetch data from apcupsd: {:?}", err);
+          error!("timeout while fetching data from apcupsd: {:?}", err);
           continue;
         }
       };
