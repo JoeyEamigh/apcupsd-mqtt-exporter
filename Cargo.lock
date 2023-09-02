@@ -34,7 +34,7 @@ checksum = "59f578c4b78986f91257bfe04d4ff905806fb0256275efe010a437ea1078ae67"
 
 [[package]]
 name = "apcupsd-mqtt-exporter"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "apcaccess",
  "dotenv",

@@ -51,12 +51,15 @@ impl APCUPSdPolling {
             }
           },
           Err(err) => {
-            error!("failed to fetch data from apcupsd: {:?}", err);
+            error!("failed to join tokio thread {:?}", err);
             continue;
           }
         },
-        Err(err) => {
-          error!("timeout while fetching data from apcupsd: {:?}", err);
+        Err(_) => {
+          error!(
+            "timeout while fetching data from apcupsd: timeout of {} seconds elapsed",
+            self.timeout
+          );
           continue;
         }
       };
