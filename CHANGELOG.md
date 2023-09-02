@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2023-9-2
+
+Changing HomeAssistant mode have a 5 min unavailable timeout.
+
 ## [0.2.1] - 2023-9-2
 
 Better error message for timeout and image version bump.

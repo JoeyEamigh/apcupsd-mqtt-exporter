@@ -87,7 +87,7 @@ impl MQTTSender {
                 },
                 "state_topic": state_topic,
                 "value_template": "{{ value_json.state }}",
-                "expire_after": 60,
+                "expire_after": 300,
               })
               .to_string();
 
