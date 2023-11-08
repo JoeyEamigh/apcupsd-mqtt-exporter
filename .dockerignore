@@ -1,14 +1,6 @@
-# Ignore everything
 **
 
-# except for build stuffs
+!src/
 !Cargo.toml
 !Cargo.lock
-!src/**/*
 !rust-toolchain.toml
-
-# Ignore unnecessary files inside allowed directories
-**/*~
-**/*.log
-**/.DS_Store
-**/Thumbs.db

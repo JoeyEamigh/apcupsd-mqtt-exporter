@@ -1,32 +1,24 @@
-# start runner
-FROM archlinux:base as runner
-
-RUN pacman -Syyu --noconfirm
-RUN pacman -Scc --noconfirm
-# end runner
-
-# start builder
-FROM runner as builder
-
-RUN pacman -Sy --noconfirm \
-  base-devel \
-  clang
-
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+# build
+FROM rust:alpine as builder
 
 WORKDIR /app
 
-COPY . /app
+RUN apk update
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
 
-RUN ~/.cargo/bin/cargo build --release
-# end builder
+COPY . .
 
-# start runner
-FROM runner as app
+RUN cargo build --release
+# end build
+
+# runner
+FROM alpine:3.18
 
 WORKDIR /app
+
+RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /app/target/release/apcupsd-mqtt-exporter /app/apcupsd-mqtt-exporter
 
-CMD ["./apcupsd-mqtt-exporter"]
+CMD ["/app/apcupsd-mqtt-exporter"]
 # end runner

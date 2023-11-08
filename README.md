@@ -2,7 +2,16 @@
 
 This is a docker application to publish apcupsd metrics to MQTT.
 
-To run, make sure to set the environment variables, or use the default values provided below.
+## Running
+
+```bash
+docker run --name apcupsd-mqtt-exporter \
+  --env-file .env \
+  --network host \
+  ghcr.io/joeyeamigh/apcupsd-mqtt-exporter:latest
+```
+
+## Environment
 
 ```sh
 APCUPSD_HOST="127.0.0.1"  # host running apcupsd
@@ -20,7 +29,11 @@ MQTT_SUFFIX=""            # MQTT topic suffix (optional)
 HOME_ASSISTANT_MODE=false # publish MQTT messages in Home Assistant-compatible JSON
 ```
 
-To use locally with the `.env` file, make sure to enable the "dotenv" feature.
+To use locally with the `.env` file, make sure to enable the "dotenv" feature, e.g.:
+
+```bash
+cargo run -F dotenv
+```
 
 To use with Home Assistant, the following `.env` will enable automatic discovery:
 
