@@ -42,7 +42,7 @@ jobs:
           VERSION=$(grep -m1 version $GITHUB_WORKSPACE/Cargo.toml | cut -d '"' -f2)
           echo "VERSION=v$VERSION" >> $GITHUB_ENV
 
-          if docker manifest inspect "ghcr.io/$REPO/apcupsd-mqtt-exporter":v"$current_version" > /dev/null; then
+          if docker manifest inspect "ghcr.io/$REPO":v"$current_version" > /dev/null; then
             echo "No need to rebuild apcupsd-mqtt-exporter"
             echo "ANYTHING_TO_DO=false" >> $GITHUB_ENV
           else
